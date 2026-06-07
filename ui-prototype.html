@@ -1,0 +1,844 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitOps 工具 - 原型设计</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f0f2f5;
+      color: #303133;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ===== 整体布局 ===== */
+    .app-container {
+      display: flex;
+      height: 100vh;
+    }
+
+    /* ===== 侧边栏 ===== */
+    .sidebar {
+      width: 220px;
+      background: #304156;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width 0.3s;
+      overflow: hidden;
+    }
+
+    .logo-area {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: rgba(0,0,0,0.2);
+    }
+
+    .logo-area svg { flex-shrink: 0; }
+    .logo-area span {
+      color: #fff;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .nav-menu { flex: 1; padding: 12px 0; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 24px;
+      color: #bfcbd9;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+      border-left: 3px solid transparent;
+      position: relative;
+    }
+    .nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
+    .nav-item.active {
+      color: #409eff;
+      background: rgba(64,158,255,0.1);
+      border-left-color: #409eff;
+    }
+    .nav-item .icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+    /* ===== 主内容 ===== */
+    .main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ===== Tab 栏 ===== */
+    .tab-bar {
+      display: flex;
+      align-items: center;
+      background: #fff;
+      border-bottom: 1px solid #e4e7ed;
+      padding: 0 8px;
+      min-height: 40px;
+      flex-shrink: 0;
+    }
+
+    .tab-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      color: #606266;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      user-select: none;
+      position: relative;
+      white-space: nowrap;
+    }
+    .tab-item:hover { color: #409eff; }
+    .tab-item.active {
+      color: #409eff;
+      border-bottom-color: #409eff;
+    }
+    .tab-item .tab-close {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; line-height: 1;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .tab-item:hover .tab-close { opacity: 0.6; }
+    .tab-item .tab-close:hover { background: #e4e7ed; opacity: 1; }
+
+    .tab-add {
+      padding: 8px; cursor: pointer; color: #c0c4cc; flex-shrink: 0;
+      transition: color 0.2s;
+    }
+    .tab-add:hover { color: #409eff; }
+
+    /* 仓库别名标签 */
+    .tab-alias {
+      font-size: 11px;
+      background: #ecf5ff;
+      color: #409eff;
+      padding: 1px 6px;
+      border-radius: 3px;
+      margin-left: 4px;
+    }
+
+    /* ===== Tab 内容区 ===== */
+    .tab-content {
+      flex: 1;
+      display: flex;
+      padding: 12px;
+      gap: 12px;
+      overflow: hidden;
+    }
+
+    /* ===== 左侧工具面板 ===== */
+    .tools-panel {
+      width: 320px;
+      min-width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .tool-card {
+      background: #fff;
+      border-radius: 6px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      border: 1px solid #ebeef5;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tool-card:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border-color: #409eff;
+    }
+    .tool-card.active {
+      border-color: #409eff;
+      box-shadow: 0 0 0 2px rgba(64,158,255,0.2);
+    }
+
+    .tool-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .tool-card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #303133;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tool-card-title .badge {
+      font-size: 11px;
+      background: #e6f7ff;
+      color: #1890ff;
+      padding: 0 6px;
+      border-radius: 3px;
+    }
+    .tool-card-status {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .tool-card-status.ready { background: #f0f9eb; color: #67c23a; }
+    .tool-card-status.running { background: #ecf5ff; color: #409eff; animation: pulse 1.5s infinite; }
+    .tool-card-status.done { background: #f0f9eb; color: #67c23a; }
+    .tool-card-status.error { background: #fef0f0; color: #f56c6c; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .tool-card-desc {
+      font-size: 13px;
+      color: #909399;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+
+    .tool-steps {
+      list-style: none;
+      padding: 0;
+    }
+    .tool-steps li {
+      font-size: 12px;
+      color: #909399;
+      padding: 4px 0;
+      padding-left: 16px;
+      position: relative;
+      line-height: 1.5;
+    }
+    .tool-steps li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 10px;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #dcdfe6;
+    }
+    .tool-steps li.done { color: #67c23a; }
+    .tool-steps li.done::before { background: #67c23a; }
+    .tool-steps li.running { color: #409eff; font-weight: 500; }
+    .tool-steps li.running::before { background: #409eff; box-shadow: 0 0 0 2px rgba(64,158,255,0.3); }
+    .tool-steps li.error { color: #f56c6c; }
+    .tool-steps li.error::before { background: #f56c6c; }
+
+    /* ===== 右侧终端面板 ===== */
+    .terminal-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #1e1e1e;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: #2d2d2d;
+      color: #999;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .terminal-dots { display: flex; gap: 6px; }
+    .terminal-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+    .terminal-dot.red { background: #ff5f56; }
+    .terminal-dot.yellow { background: #ffbd2e; }
+    .terminal-dot.green { background: #27c93f; }
+    .terminal-title { color: #ccc; font-size: 12px; }
+
+    .terminal-body {
+      flex: 1;
+      padding: 16px;
+      font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-y: auto;
+      color: #d4d4d4;
+    }
+
+    .terminal-line { white-space: pre-wrap; word-break: break-all; }
+    .terminal-line .prompt { color: #6a9955; }
+    .terminal-line .cmd { color: #dcdcaa; }
+    .terminal-line .info { color: #569cd6; }
+    .terminal-line .success { color: #4ec9b0; }
+    .terminal-line .warn { color: #ce9178; }
+    .terminal-line .error { color: #f44747; }
+    .terminal-line .dim { color: #6a9955; }
+    .terminal-line .output { color: #d4d4d4; }
+
+    .terminal-cursor::after {
+      content: "█";
+      animation: blink 1s step-end infinite;
+      color: #d4d4d4;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* ===== 配置管理页面 ===== */
+    .config-page {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .config-section {
+      background: #fff;
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .config-section h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #303133;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #ebeef5;
+    }
+
+    .config-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+    .config-row:last-child { border-bottom: none; }
+    .config-label {
+      width: 100px;
+      font-size: 13px;
+      color: #606266;
+      flex-shrink: 0;
+    }
+    .config-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #dcdfe6;
+      border-radius: 4px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .config-input:focus { border-color: #409eff; }
+
+    .config-select {
+      padding: 8px 12px;
+      border: 1px solid #dcdfe6;
+      border-radius: 4px;
+      font-size: 13px;
+      outline: none;
+      background: #fff;
+      min-width: 200px;
+    }
+
+    .config-btn {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .config-btn.primary { background: #409eff; color: #fff; }
+    .config-btn.primary:hover { background: #66b1ff; }
+    .config-btn.success { background: #67c23a; color: #fff; }
+    .config-btn.success:hover { background: #85ce61; }
+    .config-btn.danger { background: #f56c6c; color: #fff; }
+
+    /* ===== 仓库表格（配置管理） ===== */
+    .repo-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .repo-table th {
+      text-align: left;
+      padding: 10px 12px;
+      background: #fafafa;
+      color: #909399;
+      font-weight: 500;
+      border-bottom: 1px solid #ebeef5;
+    }
+    .repo-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f5f5f5;
+      color: #606266;
+    }
+    .repo-table tr:hover td { background: #f5f7fa; }
+
+    .repo-alias-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    .repo-alias-tag.dev { background: #ecf5ff; color: #409eff; }
+    .repo-alias-tag.master { background: #f0f9eb; color: #67c23a; }
+    .repo-alias-tag.feature { background: #fdf6ec; color: #e6a23c; }
+
+    .action-link {
+      color: #409eff;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .action-link:hover { color: #66b1ff; }
+    .action-link.danger { color: #f56c6c; }
+    .action-link.danger:hover { color: #f89898; }
+
+    /* ===== 占位提示 ===== */
+    .placeholder-page {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #c0c4cc;
+      gap: 12px;
+    }
+    .placeholder-page svg { opacity: 0.3; }
+    .placeholder-page p { font-size: 14px; }
+
+    /* ===== 滚动条 ===== */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #c0c4cc; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #909399; }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 900px) {
+      .tab-content { flex-direction: column; }
+      .tools-panel { width: 100%; min-width: unset; max-height: 40%; }
+      .sidebar { width: 64px; }
+      .sidebar .nav-item span { display: none; }
+      .sidebar .logo-area span { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <!-- ===== 侧边栏 ===== -->
+  <aside class="sidebar">
+    <div class="logo-area">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#409eff" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+      </svg>
+      <span>GitOps</span>
+    </div>
+
+    <nav class="nav-menu">
+      <div class="nav-item active" onclick="switchPage('main')">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>主操作页</span>
+      </div>
+      <div class="nav-item" onclick="switchPage('config')">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>配置管理</span>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- ===== 主内容区 ===== -->
+  <main class="main-area" id="mainPage">
+
+    <!-- ====== 主操作页 ====== -->
+    <div id="mainOpPage" style="display:flex;flex-direction:column;height:100%;">
+
+      <!-- Tab 栏 -->
+      <div class="tab-bar">
+        <div class="tab-item active" onclick="switchTab(this, 'tab1')">
+          📁  <span>lcz-customer-platform</span>
+          <span class="tab-alias">预发环境</span>
+          <span class="tab-close">✕</span>
+        </div>
+        <div class="tab-item" onclick="switchTab(this, 'tab2')">
+          📁  <span>deepseek-api</span>
+          <span class="tab-alias">AI 服务</span>
+          <span class="tab-close">✕</span>
+        </div>
+        <div class="tab-item" onclick="switchTab(this, 'tab3')">
+          📁  <span>ops-dashboard</span>
+          <span class="tab-alias">运维</span>
+          <span class="tab-close">✕</span>
+        </div>
+        <div class="tab-add" title="添加仓库">＋</div>
+      </div>
+
+      <!-- Tab1: lcz-customer-platform -->
+      <div class="tab-content" id="tab1">
+        <!-- 左侧：工具列表 -->
+        <div class="tools-panel">
+
+          <div class="tool-card active">
+            <div class="tool-card-header">
+              <div class="tool-card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#409eff" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                分支提交流程
+                <span class="badge">v1</span>
+              </div>
+              <span class="tool-card-status ready">待执行</span>
+            </div>
+            <div class="tool-card-desc">
+              将当前分支的最新 commit 推送到远端 → 创建 MR → 切换到目标分支并 cherry-pick
+            </div>
+            <ul class="tool-steps">
+              <li>推送 commit 到远端 <code style="background:#f4f4f5;padding:1px 4px;border-radius:2px;font-size:11px;">prep-licanzhang</code></li>
+              <li>调用 GitLab API 创建合并请求 → <code style="background:#f4f4f5;padding:1px 4px;border-radius:2px;font-size:11px;">prep-3.0</code></li>
+              <li>切换到 <code style="background:#f4f4f5;padding:1px 4px;border-radius:2px;font-size:11px;">dev-3.7</code> 并 cherry-pick</li>
+            </ul>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-header">
+              <div class="tool-card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#909399" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Git 统计报告
+                <span class="badge" style="background:#f5f5f5;color:#909399;">规划中</span>
+              </div>
+              <span class="tool-card-status" style="background:#f5f5f5;color:#c0c4cc;">待开发</span>
+            </div>
+            <div class="tool-card-desc">
+              统计本周代码提交量、文件变更、活跃度等指标并生成报告
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-header">
+              <div class="tool-card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#909399" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Code Review 提醒
+                <span class="badge" style="background:#f5f5f5;color:#909399;">规划中</span>
+              </div>
+              <span class="tool-card-status" style="background:#f5f5f5;color:#c0c4cc;">待开发</span>
+            </div>
+            <div class="tool-card-desc">
+              扫描待 review 的 MR，发送企业微信/钉钉通知
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 右侧：终端 -->
+        <div class="terminal-panel">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+            </div>
+            <span class="terminal-title">分支提交流程 - 执行日志</span>
+            <span style="font-size:11px;color:#666;">lcz-customer-platform</span>
+          </div>
+          <div class="terminal-body" id="terminal1">
+            <div class="terminal-line"><span class="prompt">[GitOps]</span> <span class="dim">等待执行——点击「执行」按钮开始流程</span></div>
+            <div class="terminal-line terminal-cursor">&nbsp;</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab2: deepseek-api (模拟) -->
+      <div class="tab-content" id="tab2" style="display:none;">
+        <div class="tools-panel">
+          <div class="tool-card">
+            <div class="tool-card-header">
+              <div class="tool-card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#409eff" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                分支提交流程
+                <span class="badge">v1</span>
+              </div>
+              <span class="tool-card-status ready">待执行</span>
+            </div>
+            <div class="tool-card-desc">
+              将当前分支的最新 commit 推送到远端 → 创建 MR → 切换到目标分支并 cherry-pick
+            </div>
+          </div>
+        </div>
+        <div class="terminal-panel">
+          <div class="terminal-header">
+            <div class="terminal-dots"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span><span class="terminal-dot green"></span></div>
+            <span class="terminal-title">执行日志</span>
+            <span style="font-size:11px;color:#666;">deepseek-api</span>
+          </div>
+          <div class="terminal-body">
+            <div class="terminal-line"><span class="prompt">[GitOps]</span> <span class="dim">等待执行</span></div>
+            <div class="terminal-line terminal-cursor">&nbsp;</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab3: ops-dashboard (模拟) -->
+      <div class="tab-content" id="tab3" style="display:none;">
+        <div class="placeholder-page">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#c0c4cc" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          <p>请先在此仓库中配置工具项</p>
+        </div>
+      </div>
+
+      <!-- 模拟执行按钮 -->
+      <div style="padding:0 12px 12px;display:flex;gap:10px;flex-shrink:0;">
+        <button style="padding:8px 24px;border:none;border-radius:4px;background:#409eff;color:#fff;font-size:13px;cursor:pointer;" onclick="simulateRun()">▶ 执行分支提交流程</button>
+        <button style="padding:8px 24px;border:none;border-radius:4px;background:#fff;color:#606266;font-size:13px;cursor:pointer;border:1px solid #dcdfe6;" onclick="clearTerminal()">清空日志</button>
+      </div>
+    </div>
+
+    <!-- ====== 配置管理页 ====== -->
+    <div id="configPage" style="display:none;flex:1;overflow-y:auto;">
+      <div class="config-page">
+
+        <!-- 仓库管理 -->
+        <div class="config-section">
+          <h3>📂 仓库管理</h3>
+          <table class="repo-table">
+            <thead>
+              <tr><th style="width:40px">#</th><th style="width:200px">仓库路径</th><th style="width:120px">别名</th><th style="width:100px">当前分支</th><th>默认提交流程</th><th style="width:120px">操作</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td><code style="font-size:12px;background:#f5f5f5;padding:2px 6px;border-radius:3px;">D:\workspace\lcz-platform</code></td>
+                <td><span class="repo-alias-tag dev">预发环境</span></td>
+                <td><code style="font-size:12px;">prep-licanzhang</code></td>
+                <td><code style="font-size:12px;">prep-licanzhang → prep-3.0 → dev-3.7</code></td>
+                <td><span class="action-link">编辑</span> <span class="action-link danger">删除</span></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td><code style="font-size:12px;background:#f5f5f5;padding:2px 6px;border-radius:3px;">D:\workspace\deepseek-api</code></td>
+                <td><span class="repo-alias-tag feature">AI 服务</span></td>
+                <td><code style="font-size:12px;">feature/ollama</code></td>
+                <td><code style="font-size:12px;">feature/ollama → develop → main</code></td>
+                <td><span class="action-link">编辑</span> <span class="action-link danger">删除</span></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td><code style="font-size:12px;background:#f5f5f5;padding:2px 6px;border-radius:3px;">D:\workspace\ops-dash</code></td>
+                <td><span class="repo-alias-tag master">运维</span></td>
+                <td><code style="font-size:12px;">main</code></td>
+                <td><span style="color:#c0c4cc;">未配置</span></td>
+                <td><span class="action-link">编辑</span> <span class="action-link danger">删除</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="margin-top:12px;">
+            <button class="config-btn primary">＋ 添加仓库</button>
+          </div>
+        </div>
+
+        <!-- 提交流程模板 -->
+        <div class="config-section">
+          <h3>🔧 提交流程模板</h3>
+          <div>
+            <div class="config-row">
+              <span class="config-label">流程名称</span>
+              <input class="config-input" value="prep-release 提交流程" style="width:300px;" />
+            </div>
+            <div class="config-row">
+              <span class="config-label">源分支</span>
+              <input class="config-input" value="prep-{username}" style="width:200px;" />
+            </div>
+            <div class="config-row">
+              <span class="config-label">MR 目标分支</span>
+              <input class="config-input" value="prep-3.0" style="width:200px;" />
+            </div>
+            <div class="config-row">
+              <span class="config-label">Cherry-pick 目标</span>
+              <input class="config-input" value="dev-3.7" style="width:200px;" />
+            </div>
+            <div class="config-row">
+              <span class="config-label">GitLab 地址</span>
+              <input class="config-input" value="https://gitlab.internal.company.com" style="width:400px;" />
+            </div>
+            <div class="config-row">
+              <span class="config-label">Access Token</span>
+              <input class="config-input" type="password" value="glpat-xxxxxxxxxxxx" style="width:300px;" />
+            </div>
+            <div style="margin-top:12px;display:flex;gap:10px;">
+              <button class="config-btn primary">保存</button>
+              <button class="config-btn" style="background:#fff;border:1px solid #dcdfe6;color:#606266;">重置</button>
+              <button class="config-btn success">测试连接</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 全局设置 -->
+        <div class="config-section">
+          <h3>⚙️ 全局设置</h3>
+          <div>
+            <div class="config-row">
+              <span class="config-label">默认 Shell</span>
+              <select class="config-select">
+                <option>PowerShell 7</option>
+                <option selected>PowerShell 5.1 (Windows)</option>
+                <option>Git Bash</option>
+                <option>CMD</option>
+              </select>
+            </div>
+            <div class="config-row">
+              <span class="config-label">Git 路径</span>
+              <input class="config-input" value="C:\Program Files\Git\bin\git.exe" style="width:400px;" />
+            </div>
+            <div class="config-row">
+              <span class="config-label">终端输出保留</span>
+              <select class="config-select">
+                <option>100 行</option>
+                <option selected>500 行</option>
+                <option>1000 行</option>
+                <option>不限</option>
+              </select>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="config-btn primary">保存设置</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  // Tab 切换
+  function switchTab(el, tabId) {
+    document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+
+    // 找到当前主操作页内的所有 tab-content
+    const parent = document.getElementById('mainOpPage');
+    parent.querySelectorAll('.tab-content, .placeholder-page').forEach(c => c.style.display = 'none');
+    const target = document.getElementById(tabId);
+    if (target) target.style.display = 'flex';
+  }
+
+  // 页面切换
+  function switchPage(page) {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+
+    if (page === 'main') {
+      document.getElementById('mainOpPage').style.display = 'flex';
+      document.getElementById('configPage').style.display = 'none';
+    } else {
+      document.getElementById('mainOpPage').style.display = 'none';
+      document.getElementById('configPage').style.display = 'block';
+    }
+  }
+
+  // 模拟执行
+  let running = false;
+  function simulateRun() {
+    if (running) return;
+    running = true;
+
+    const term = document.getElementById('terminal1');
+    term.innerHTML = '';
+
+    const lines = [
+      { text: '[GitOps] 开始执行「分支提交流程」...', cls: 'info' },
+      { text: '', cls: '' },
+      { text: '$ git push origin prep-licanzhang', cls: 'cmd' },
+      { text: 'Enumerating objects: 12, done.', cls: 'output' },
+      { text: 'Counting objects: 100% (12/12), done.', cls: 'output' },
+      { text: 'Writing objects: 100% (8/8), 2.45 KiB | 2.45 MiB/s, done.', cls: 'output' },
+      { text: 'Total 8 (delta 4), reused 0 (delta 0), pack-reused 0', cls: 'output' },
+      { text: 'remote:   -> prep-licanzhang', cls: 'output' },
+      { text: '✔ 推送成功', cls: 'success' },
+      { text: '', cls: '' },
+      { text: '[GitLab API] 正在创建 Merge Request...', cls: 'info' },
+      { text: 'POST /api/v4/projects/42/merge_requests', cls: 'cmd' },
+      { text: '  source_branch: prep-licanzhang', cls: 'output' },
+      { text: '  target_branch: prep-3.0', cls: 'output' },
+      { text: '  title: "feat: 用户权限模块重构"', cls: 'output' },
+      { text: '✔ Merge Request 创建成功: !1427', cls: 'success' },
+      { text: '   URL: https://gitlab.internal.com/lcz-platform/-/merge_requests/1427', cls: 'dim' },
+      { text: '', cls: '' },
+      { text: '$ git checkout dev-3.7', cls: 'cmd' },
+      { text: 'Switched to branch dev-3.7', cls: 'output' },
+      { text: 'Your branch is up to date with origin/dev-3.7.', cls: 'output' },
+      { text: '', cls: '' },
+      { text: '$ git pull origin dev-3.7', cls: 'cmd' },
+      { text: 'Updating 2a3b5c1..f8e9d0a', cls: 'output' },
+      { text: 'Fast-forward', cls: 'output' },
+      { text: '', cls: '' },
+      { text: `$ git cherry-pick f8e9d0a`, cls: 'cmd' },
+      { text: '[dev-3.7 5a6b7c8] feat: 用户权限模块重构', cls: 'output' },
+      { text: ' Date: Fri Jun 6 11:30:00 2026 +0800', cls: 'output' },
+      { text: ' 8 files changed, 156 insertions(+), 42 deletions(-)', cls: 'output' },
+      { text: '✔ Cherry-pick 成功', cls: 'success' },
+      { text: '', cls: '' },
+      { text: '✅ 分支提交流程执行完毕', cls: 'success' },
+      { text: '', cls: '' },
+      { text: '=== 流程摘要 ===', cls: 'info' },
+      { text: '  ① git push → prep-licanzhang          ✔', cls: 'success' },
+      { text: '  ② GitLab MR → prep-3.0                ✔  !1427', cls: 'success' },
+      { text: '  ③ cherry-pick → dev-3.7               ✔  commit 5a6b7c8', cls: 'success' },
+      { text: '', cls: '' },
+    ];
+
+    let i = 0;
+    function appendLine() {
+      if (i >= lines.length) {
+        running = false;
+        // Update tool status
+        document.querySelector('.tool-card .tool-card-status').textContent = '已完成';
+        document.querySelector('.tool-card .tool-card-status').className = 'tool-card-status done';
+        return;
+      }
+      const line = lines[i];
+      const div = document.createElement('div');
+      div.className = 'terminal-line';
+      div.innerHTML = `<span class="${line.cls}">${line.text}</span>`;
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+      i++;
+      const delay = line.text.startsWith('$') ? 400 : line.text.startsWith('✔') || line.text.startsWith('✅') ? 300 : 80;
+      setTimeout(appendLine, delay);
+    }
+
+    // Update tool status
+    document.querySelector('.tool-card .tool-card-status').textContent = '执行中...';
+    document.querySelector('.tool-card .tool-card-status').className = 'tool-card-status running';
+
+    appendLine();
+  }
+
+  function clearTerminal() {
+    const term = document.getElementById('terminal1');
+    term.innerHTML = `
+      <div class="terminal-line"><span class="prompt">[GitOps]</span> <span class="dim">日志已清空，等待执行</span></div>
+      <div class="terminal-line terminal-cursor">&nbsp;</div>`;
+  }
+</script>
+
+</body>
+</html>
