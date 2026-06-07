@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 本机数据库连接串，避免提交敏感凭据
+src-tauri/gitops/db_url.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
