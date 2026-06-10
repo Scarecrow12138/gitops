@@ -1,7 +1,8 @@
 ﻿<script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { useAppStore } from '../composables/useAppStore'
+import { ensureDatabaseConfigured, loadConfigFromDatabase, loadDatabasePath, saveConfigToDatabase } from '../utils/configPersistence'
+import type { RepoConfig } from '../types'
 import { ElMessage } from 'element-plus'
 
 const store = useAppStore()
@@ -10,6 +11,7 @@ const store = useAppStore()
 const editRepos = reactive(store.repos.map(r => ({ ...r })))
 const editFlow = reactive({ ...store.flowTemplate })
 const editGitLab = reactive({ ...store.gitLabConfig })
+const editRelease = reactive({ ...store.releaseConfig })
 const projectList = reactive(
   Object.entries(store.gitLabConfig.projects).map(([name, id]) => ({ name, id }))
 )
@@ -30,45 +32,98 @@ function removeProject(index: number) {
 }
 const editSettings = reactive({ ...store.settings })
 
-function saveConfig() {
+function replaceEditRepos(nextRepos: RepoConfig[]) {
+  editRepos.splice(0, editRepos.length, ...nextRepos.map(repo => ({ ...repo })))
+}
+
+function replaceProjectList(projects: Record<string, string>) {
+  projectList.splice(0, projectList.length, ...Object.entries(projects).map(([name, id]) => ({ name, id })))
+}
+
+function syncEditorFromStore() {
+  replaceEditRepos(store.repos)
+  Object.assign(editFlow, store.flowTemplate)
+  Object.assign(editGitLab, store.gitLabConfig)
+  replaceProjectList(store.gitLabConfig.projects)
+  Object.assign(editSettings, store.settings)
+  Object.assign(editRelease, store.releaseConfig)
+}
+
+async function saveConfig() {
+  if (configSaving.value) return
+  configSaving.value = true
   syncProjectsToStore()
-  // 更新 Store
-  store.repos.splice(0, store.repos.length, ...editRepos)
+  const nextRepos = editRepos.map(repo => ({ ...repo }))
+  // 更新 Store，并同步主操作页 tab。
+  store.replaceRepos(nextRepos)
   store.updateFlowTemplate(editFlow)
   store.updateGitLabConfig(editGitLab)
   store.updateSettings(editSettings)
-  if (dbConnected.value) {
-    invoke("save_all_config", { data: { repositories: editRepos, flow_templates: [editFlow], gitlab_configs: [editGitLab], project_mappings: projectList, global_settings: [editSettings], repo_tools: [] } }).catch((e: any) => console.error("DB save failed:", e))
+  store.updateReleaseConfig(editRelease)
+  try {
+    await saveConfigToDatabase(store.repos, store.flowTemplate, store.gitLabConfig, store.settings, store.releaseConfig)
+    dbConnected.value = true
+    ElMessage.success("配置已保存并同步到数据库")
+  } catch (e: any) {
+    ElMessage.error("配置已更新，数据库同步失败: " + e)
+  } finally {
+    configSaving.value = false
   }
-  ElMessage.success("配置已保存")
 }
 
-const dbUrl = ref("")
+async function removeRepoFromConfig(index: number) {
+  const repo = editRepos[index]
+  if (!repo) return
+
+  const beforeStoreRepos = store.repos.map(item => ({ ...item }))
+  const beforeEditRepos = editRepos.map(item => ({ ...item }))
+
+  editRepos.splice(index, 1)
+  store.removeRepo(repo.id)
+
+  try {
+    await saveConfigToDatabase(store.repos, store.flowTemplate, store.gitLabConfig, store.settings, store.releaseConfig)
+    dbConnected.value = true
+    ElMessage.success("仓库已删除并同步到数据库")
+  } catch (e: any) {
+    replaceEditRepos(beforeEditRepos)
+    store.replaceRepos(beforeStoreRepos)
+    ElMessage.error("删除失败，数据库未同步: " + e)
+  }
+}
+
+const databasePath = ref("")
 const dbConnected = ref(false)
 const dbConnecting = ref(false)
+const configSaving = ref(false)
 
 onMounted(async () => {
   try {
-    const saved = await invoke("load_saved_db_url")
-    dbUrl.value = saved
-  } catch { /* no saved url */ }
+    databasePath.value = await loadDatabasePath()
+    await loadConfigFromDatabase(store)
+    syncEditorFromStore()
+    dbConnected.value = true
+  } catch { /* 本地数据库初始化失败时不阻断配置页渲染 */ }
 })
 
-async function connectDatabase() {
-  if (!dbUrl.value) { ElMessage.warning("请输入 Neon 连接字符串"); return }
+async function initializeLocalDatabase() {
   dbConnecting.value = true
   try {
-    const result = await invoke("configure_database", { url: dbUrl.value })
-    await invoke("save_db_url", { url: dbUrl.value })
+    await ensureDatabaseConfigured()
+    databasePath.value = await loadDatabasePath()
+    await loadConfigFromDatabase(store)
+    syncEditorFromStore()
     dbConnected.value = true
-    ElMessage.success(result)
-  } catch (e: any) { ElMessage.error("连接失败: " + e) }
+    ElMessage.success("本地数据库已初始化并加载配置")
+  } catch (e: any) { ElMessage.error("本地数据库初始化失败: " + e) }
   finally { dbConnecting.value = false }
 }
 
 async function loadFromDb() {
   try {
-    await invoke("load_all_config")
+    await loadConfigFromDatabase(store)
+    syncEditorFromStore()
+    dbConnected.value = true
     ElMessage.success("已从数据库加载配置")
   } catch (e: any) { ElMessage.error("加载失败: " + e) }
 }
@@ -92,14 +147,12 @@ async function loadFromDb() {
         </el-table-column>
         <el-table-column prop="alias" label="别名" width="150">
           <template #default="{ row }">
-            <el-tag :type="row.alias === '预发环境' ? 'primary' : row.alias === 'AI 服务' ? 'success' : row.alias === '运维' ? 'warning' : 'info'" size="small" effect="plain">
-              {{ row.alias }}
-            </el-tag>
+            <el-input v-model="row.alias" size="small" placeholder="仓库别名" />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="{ $index }">
-            <el-button type="danger" link size="small" @click="editRepos.splice($index, 1); ElMessage.info('已删除')">删除</el-button>
+            <el-button type="danger" link size="small" @click="removeRepoFromConfig($index)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -168,24 +221,56 @@ async function loadFromDb() {
       </div>
     </div>
 
-    <!-- 数据库连接 -->
+    <!-- 发布管理配置 -->
     <div class="config-section">
       <h3>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-        Neon 数据库连接
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6 4 4 6-8"/><path d="M14 7h6v6"/><path d="M4 21h16"/></svg>
+        发布管理配置
       </h3>
       <div class="config-form">
         <div class="form-row">
-          <span class="form-label">连接字符串</span>
-          <el-input v-model="dbUrl" size="small" style="width:500px" type="password" show-password placeholder="postgresql://..." />
-          <el-button type="primary" size="small" :loading="dbConnecting" @click="connectDatabase">
-            {{ dbConnected ? "已连接" : "连接并初始化" }}
+          <span class="form-label">Jenkins 地址</span>
+          <el-input v-model="editRelease.jenkinsUrl" size="small" style="width:400px" placeholder="http://jenkins.example.com" />
+        </div>
+        <div class="form-row">
+          <span class="form-label">Jenkins 用户</span>
+          <el-input v-model="editRelease.jenkinsUsername" size="small" style="width:220px" placeholder="用户名" />
+        </div>
+        <div class="form-row">
+          <span class="form-label">Jenkins Token</span>
+          <el-input v-model="editRelease.jenkinsToken" size="small" style="width:350px" type="password" show-password placeholder="API Token" />
+        </div>
+        <div class="form-row">
+          <span class="form-label">提交数阈值</span>
+          <el-input-number v-model="editRelease.commitLimit" size="small" :min="1" :max="500" :step="1" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 本地数据库 -->
+    <div class="config-section">
+      <h3>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        本地数据库
+      </h3>
+      <div class="config-form">
+        <div class="form-row">
+          <span class="form-label">状态</span>
+          <el-tag :type="dbConnected ? 'success' : 'info'" size="small" effect="plain">
+            {{ dbConnected ? "已连接" : "未初始化" }}
+          </el-tag>
+          <el-button type="primary" size="small" :loading="dbConnecting" @click="initializeLocalDatabase">
+            {{ dbConnected ? "重新初始化" : "初始化本地库" }}
           </el-button>
+        </div>
+        <div class="form-row">
+          <span class="form-label">文件位置</span>
+          <el-input v-model="databasePath" size="small" style="width:520px" readonly placeholder="启动后自动创建 gitops.sqlite" />
         </div>
         <div v-if="dbConnected" class="form-row">
           <span class="form-label">操作</span>
-          <el-button size="small" @click="loadFromDb">从数据库加载</el-button>
-          <span style="font-size:12px;color:#67c23a;margin-left:8px;">✓ 数据库已连接</span>
+          <el-button size="small" @click="loadFromDb">重新加载配置</el-button>
+          <span style="font-size:12px;color:#67c23a;margin-left:8px;">本地 SQLite 已连接</span>
         </div>
       </div>
     </div>
@@ -219,7 +304,9 @@ async function loadFromDb() {
 
     <!-- 保存按钮 -->
     <div style="padding:16px 0;display:flex;gap:10px;">
-      <el-button type="primary" @click="saveConfig">保存全部配置</el-button>
+      <el-button type="primary" :loading="configSaving" :disabled="configSaving" @click="saveConfig">
+        {{ configSaving ? "保存中" : "保存全部配置" }}
+      </el-button>
     </div>
   </div>
 </template>

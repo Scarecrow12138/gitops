@@ -1,11 +1,64 @@
-﻿mod db;
+mod db;
+mod http_retry;
+mod release;
+use crate::http_retry::{
+    gitlab_retry_delay_seconds, retry_after_seconds, should_retry_gitlab_status,
+    MAX_GITLAB_RETRIES,
+};
 use log::info;
-use std::process::Command;
+use reqwest::Response;
 use serde::Deserialize;
+use std::process::Command;
 
 #[derive(Deserialize)]
 struct MrResponse {
     web_url: String,
+}
+
+async fn send_gitlab_request<F>(api: &str, build_request: F) -> Result<Response, String>
+where
+    F: Fn() -> reqwest::RequestBuilder,
+{
+    for attempt in 0..=MAX_GITLAB_RETRIES {
+        match build_request().send().await {
+            Ok(response) => {
+                let status = response.status();
+                if status.is_success() {
+                    return Ok(response);
+                }
+
+                if should_retry_gitlab_status(status) && attempt < MAX_GITLAB_RETRIES {
+                    let retry_no = attempt + 1;
+                    let delay_seconds = retry_after_seconds(response.headers(), retry_no);
+                    let body = response.text().await.unwrap_or_default();
+                    info!(
+                        "{} 调用失败，{} 秒后第 {} 次重试: {} {}",
+                        api, delay_seconds, retry_no, status, body
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(delay_seconds)).await;
+                    continue;
+                }
+
+                let body = response.text().await.unwrap_or_default();
+                return Err(format!("{} 返回错误 ({}): {}", api, status, body));
+            }
+            Err(error) => {
+                if attempt < MAX_GITLAB_RETRIES {
+                    let retry_no = attempt + 1;
+                    let delay_seconds = gitlab_retry_delay_seconds(retry_no);
+                    info!(
+                        "{} 请求失败，{} 秒后第 {} 次重试: {}",
+                        api, delay_seconds, retry_no, error
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(delay_seconds)).await;
+                    continue;
+                }
+                return Err(format!("{} 请求失败: {}", api, error));
+            }
+        }
+    }
+
+    Err(format!("{} 请求失败: 重试次数已耗尽", api))
 }
 
 #[tauri::command]
@@ -33,7 +86,11 @@ fn run_git_command(repo_path: String, args: Vec<String>) -> Result<String, Strin
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        let err_msg = if !stderr.is_empty() { stderr } else { stdout.clone() };
+        let err_msg = if !stderr.is_empty() {
+            stderr
+        } else {
+            stdout.clone()
+        };
         return Err(format!("git 命令执行失败: {}", err_msg.trim()));
     }
 
@@ -73,22 +130,13 @@ async fn create_gitlab_mr(
     ];
 
     let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header("PRIVATE-TOKEN", &token)
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| format!("请求 GitLab API 失败: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "GitLab API 返回错误 ({}): {}",
-            status, body
-        ));
-    }
+    let response = send_gitlab_request("创建 GitLab Merge Request", || {
+        client
+            .post(&url)
+            .header("PRIVATE-TOKEN", &token)
+            .form(&params)
+    })
+    .await?;
 
     let mr: MrResponse = response
         .json()
@@ -101,7 +149,19 @@ async fn create_gitlab_mr(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet, run_git_command, create_gitlab_mr, db::configure_database, db::check_database_connection, db::load_all_config, db::save_all_config, db::save_db_url, db::load_saved_db_url])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            run_git_command,
+            create_gitlab_mr,
+            db::configure_database,
+            db::check_database_connection,
+            db::load_database_path,
+            db::load_all_config,
+            db::save_all_config,
+            release::refresh_release_task,
+            release::start_release_attempt,
+            release::complete_release_task
+        ])
         .plugin(tauri_plugin_dialog::init())
         .manage(db::DbState::new())
         .setup(|app| {
@@ -117,6 +177,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-
-

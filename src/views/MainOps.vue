@@ -4,6 +4,7 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { useAppStore } from '../composables/useAppStore'
+import { saveConfigToDatabase } from '../utils/configPersistence'
 import Terminal from '../components/Terminal.vue'
 import StandardCherryPick from '../components/tools/StandardCherryPick.vue'
 import HotfixCherryPick from '../components/tools/HotfixCherryPick.vue'
@@ -20,7 +21,16 @@ async function handleRemoveTab(tabId: string) {
       cancelButtonText: '取消',
       type: 'warning',
     })
-    store.removeTab(tabId)
+    const beforeRepos = store.repos.map(repo => ({ ...repo }))
+    if (!store.removeTab(tabId)) return
+
+    try {
+      await saveConfigToDatabase(store.repos, store.flowTemplate, store.gitLabConfig, store.settings, store.releaseConfig)
+      ElMessage.success('仓库已删除并同步到数据库')
+    } catch (e: any) {
+      store.replaceRepos(beforeRepos)
+      ElMessage.error('删除失败，数据库未同步: ' + e)
+    }
   } catch {
     // user cancelled
   }
@@ -96,14 +106,16 @@ async function runStandardCP(tabId: string, toolId: ToolId, inputs: Record<strin
   const { commitMessage, targetBranch } = inputs
   const repo = store.repos.find(r => r.id === store.activeTab?.repoId)
   const repoPath = repo?.path || ''
+  const normalizedCommitMessage = commitMessage?.trim() || ''
+  let sourceCommit = ''
 
   const steps = [
     { msg: '同步远程分支信息', cmd: 'fetch', args: ['fetch', 'origin'] },
-    { msg: '暂存并提交本地变更', cmd: 'add-commit', args: ['add', '.'], extra: commitMessage ? ['commit', '-m', commitMessage] : null },
+    { msg: '暂存并提交本地变更', cmd: 'add-commit', args: ['add', '.'] },
     { msg: '推送源分支', cmd: 'push-source', args: ['push'] },
     { msg: '切换到目标分支', cmd: 'checkout-target', args: ['checkout', targetBranch] },
     { msg: '拉取目标分支最新代码', cmd: 'pull-target', args: ['pull'] },
-    { msg: '执行 cherry-pick', cmd: 'cherry-pick', args: ['cherry-pick', 'HEAD'] },
+    { msg: '执行 cherry-pick', cmd: 'cherry-pick', args: ['cherry-pick'] },
     { msg: '推送目标分支', cmd: 'push-target', args: ['push'] },
     { msg: '切回源分支', cmd: 'checkout-back', args: ['checkout', '-'] },
   ]
@@ -111,16 +123,62 @@ async function runStandardCP(tabId: string, toolId: ToolId, inputs: Record<strin
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i]
     store.setStepStatus(tabId, toolId, i, 'running')
-    addLog({ text: `$ git ${step.args.join(' ')}`, cls: 'cmd' })
 
     try {
-      const result = await invoke<string>('run_git_command', {
-        repoPath,
-        args: step.extra || step.args,
-      })
-      result.trim().split('\n').filter(Boolean).forEach(line => {
-        addLog({ text: line, cls: line.startsWith('error') || line.startsWith('fatal') ? 'error' : 'output' })
-      })
+      if (step.cmd === 'add-commit') {
+        if (!normalizedCommitMessage) {
+          addLog({ text: '未填写提交信息，跳过 add/commit，后续将使用当前 HEAD', cls: 'info' })
+        } else {
+          addLog({ text: '$ git add .', cls: 'cmd' })
+          const addResult = await invoke<string>('run_git_command', {
+            repoPath,
+            args: ['add', '.'],
+          })
+          addResult.trim().split('\n').filter(Boolean).forEach(line => {
+            addLog({ text: line, cls: line.startsWith('error') || line.startsWith('fatal') ? 'error' : 'output' })
+          })
+
+          addLog({ text: `$ git commit -m "${normalizedCommitMessage}"`, cls: 'cmd' })
+          const commitResult = await invoke<string>('run_git_command', {
+            repoPath,
+            args: ['commit', '-m', normalizedCommitMessage],
+          })
+          commitResult.trim().split('\n').filter(Boolean).forEach(line => {
+            addLog({ text: line, cls: line.startsWith('error') || line.startsWith('fatal') ? 'error' : 'output' })
+          })
+        }
+      } else if (step.cmd === 'push-source') {
+        addLog({ text: `$ git ${step.args.join(' ')}`, cls: 'cmd' })
+        const result = await invoke<string>('run_git_command', { repoPath, args: step.args })
+        result.trim().split('\n').filter(Boolean).forEach(line => {
+          addLog({ text: line, cls: line.startsWith('error') || line.startsWith('fatal') ? 'error' : 'output' })
+        })
+
+        sourceCommit = (await invoke<string>('run_git_command', {
+          repoPath,
+          args: ['rev-parse', 'HEAD'],
+        })).trim()
+        addLog({ text: `源分支提交: ${sourceCommit}`, cls: 'dim' })
+      } else if (step.cmd === 'cherry-pick') {
+        if (!sourceCommit) {
+          sourceCommit = (await invoke<string>('run_git_command', {
+            repoPath,
+            args: ['rev-parse', 'HEAD'],
+          })).trim()
+        }
+        const cherryPickArgs = ['cherry-pick', sourceCommit]
+        addLog({ text: `$ git ${cherryPickArgs.join(' ')}`, cls: 'cmd' })
+        const result = await invoke<string>('run_git_command', { repoPath, args: cherryPickArgs })
+        result.trim().split('\n').filter(Boolean).forEach(line => {
+          addLog({ text: line, cls: line.startsWith('error') || line.startsWith('fatal') ? 'error' : 'output' })
+        })
+      } else {
+        addLog({ text: `$ git ${step.args.join(' ')}`, cls: 'cmd' })
+        const result = await invoke<string>('run_git_command', { repoPath, args: step.args })
+        result.trim().split('\n').filter(Boolean).forEach(line => {
+          addLog({ text: line, cls: line.startsWith('error') || line.startsWith('fatal') ? 'error' : 'output' })
+        })
+      }
       store.setStepStatus(tabId, toolId, i, 'done')
       addLog({ text: `✔ ${step.msg} 成功`, cls: 'success' })
     } catch (e: any) {
@@ -146,14 +204,14 @@ async function runHotfixMR(tabId: string, toolId: ToolId, inputs: Record<string,
   const config = store.gitLabConfig
   const flow = store.flowTemplate
 
-  const actualHash = commitHash || 'HEAD'
+  let actualHash = commitHash?.trim() || ''
   const mrTarget = flow.mrTargetBranch || 'main'
 
   const steps = [
     { msg: '同步远程分支信息', cmd: 'fetch', args: ['fetch', 'origin'] },
     { msg: '检查/创建 hotfix 分支', cmd: 'check-hotfix', args: ['checkout', hotfixBranch || 'hotfix-licanzhang'] },
     { msg: `同步 ${mrTarget} 到 hotfix`, cmd: 'sync-main', args: ['pull'] },
-    { msg: `执行 cherry-pick (${actualHash})`, cmd: 'cherry-pick', args: ['cherry-pick', actualHash] },
+    { msg: '执行 cherry-pick', cmd: 'cherry-pick', args: ['cherry-pick'] },
     { msg: '推送 hotfix 分支', cmd: 'push-hotfix', args: ['push'] },
     { msg: '创建 GitLab Merge Request', cmd: 'mr', args: [] },
     { msg: '切回源分支', cmd: 'checkout-back', args: ['checkout', '-'] },
@@ -206,9 +264,38 @@ async function runHotfixMR(tabId: string, toolId: ToolId, inputs: Record<string,
         }
       }
     } else {
-      addLog({ text: `$ git ${step.args.join(' ')}`, cls: 'cmd' })
       try {
-        const result = await invoke<string>('run_git_command', { repoPath, args: step.args })
+        let args = step.args
+        if (step.cmd === 'fetch' && !actualHash) {
+          addLog({ text: `$ git ${args.join(' ')}`, cls: 'cmd' })
+          const result = await invoke<string>('run_git_command', { repoPath, args })
+          result.trim().split('\n').filter(Boolean).forEach(line => {
+            addLog({ text: line, cls: 'output' })
+          })
+
+          actualHash = (await invoke<string>('run_git_command', {
+            repoPath,
+            args: ['rev-parse', 'HEAD'],
+          })).trim()
+          addLog({ text: `源分支提交: ${actualHash}`, cls: 'dim' })
+          store.setStepStatus(tabId, toolId, i, 'done')
+          addLog({ text: `✔ ${step.msg} 成功`, cls: 'success' })
+          await new Promise(r => setTimeout(r, 200))
+          continue
+        }
+
+        if (step.cmd === 'cherry-pick') {
+          if (!actualHash) {
+            actualHash = (await invoke<string>('run_git_command', {
+              repoPath,
+              args: ['rev-parse', 'HEAD'],
+            })).trim()
+          }
+          args = ['cherry-pick', actualHash]
+        }
+
+        addLog({ text: `$ git ${args.join(' ')}`, cls: 'cmd' })
+        const result = await invoke<string>('run_git_command', { repoPath, args })
         result.trim().split('\n').filter(Boolean).forEach(line => {
           addLog({ text: line, cls: 'output' })
         })

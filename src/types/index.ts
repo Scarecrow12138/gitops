@@ -23,6 +23,14 @@ export interface GitLabConfig {
   projects: Record<string, string>  // project name -> project id
 }
 
+// ===== 发布配置 =====
+export interface ReleaseConfig {
+  jenkinsUrl: string
+  jenkinsUsername: string
+  jenkinsToken: string
+  commitLimit: number
+}
+
 // ===== 工具定义 =====
 export type ToolId = 'standard-cp' | 'hotfix-mr'
 
@@ -67,4 +75,39 @@ export interface GlobalSettings {
 }
 
 // ===== 应用页面 =====
-export type AppPage = 'main' | 'config' | 'help'
+export type AppPage = 'main' | 'release' | 'config' | 'help'
+
+export interface ReleaseTask {
+  id: string
+  taskKey: string
+  status: 'pending' | 'running' | 'success' | 'failed'
+  recordIds: number[]
+  relNos: string[]
+  services: string[]
+  attemptsCount: number
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface ReleaseAttempt {
+  id: number
+  taskId: string
+  attemptNo: number
+  status: 'running' | 'success' | 'failed'
+  startedAt?: string | null
+  finishedAt?: string | null
+  failedStep?: string | null
+  logOutput?: string | null
+}
+
+export interface ReleaseTaskPayload {
+  task?: ReleaseTask | null
+  attempts: ReleaseAttempt[]
+  logs: string[]
+}
+
+export interface ReleaseAttemptPayload {
+  task: ReleaseTask
+  attempts: ReleaseAttempt[]
+  logs: string[]
+}

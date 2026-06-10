@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitOps - 发布管理原型</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --sidebar: #304156;
+      --sidebar-active: #409eff;
+      --page-bg: #f0f2f5;
+      --panel: #ffffff;
+      --border: #e4e7ed;
+      --text: #303133;
+      --subtle: #606266;
+      --muted: #909399;
+      --success: #67c23a;
+      --warning: #e6a23c;
+      --danger: #f56c6c;
+      --info: #409eff;
+      --terminal: #1e1e1e;
+    }
+
+    body {
+      height: 100vh;
+      overflow: hidden;
+      color: var(--text);
+      background: var(--page-bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+    }
+
+    button, input, select, textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .app-container {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* 左侧菜单保持和当前 GitOps 工具一致，新增「发布管理」。 */
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--sidebar);
+    }
+
+    .logo-area {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .logo-area svg { flex-shrink: 0; }
+
+    .logo-text {
+      color: #fff;
+      font-size: 20px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .nav-menu {
+      flex: 1;
+      padding: 12px 0;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 48px;
+      padding: 0 24px;
+      color: #bfcbd9;
+      border-left: 3px solid transparent;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+
+    .nav-item:hover {
+      color: #fff;
+      background: rgba(255,255,255,0.05);
+    }
+
+    .nav-item.active {
+      color: var(--sidebar-active);
+      background: rgba(64,158,255,0.1);
+      border-left-color: var(--sidebar-active);
+    }
+
+    .nav-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .main-area {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .top-strip {
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 16px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .env-switch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--subtle);
+      font-size: 12px;
+    }
+
+    .env-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 10px;
+      color: #fff;
+      background: #5c6370;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .content {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 360px minmax(460px, 1fr) 420px;
+      gap: 12px;
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    .panel {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 4px;
+      background: #fff;
+      border: 1px solid #dcdfe6;
+      color: var(--subtle);
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      color: var(--info);
+      border-color: #c6e2ff;
+      background: #ecf5ff;
+    }
+
+    .btn.primary {
+      color: #fff;
+      background: var(--info);
+      border-color: var(--info);
+    }
+
+    .btn.primary:hover {
+      background: #66b1ff;
+      border-color: #66b1ff;
+    }
+
+    .btn.danger {
+      color: var(--danger);
+      border-color: #fbc4c4;
+      background: #fef0f0;
+    }
+
+    .btn-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field.inline {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .label {
+      color: var(--subtle);
+      font-size: 13px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .input,
+    .select,
+    .textarea {
+      width: 100%;
+      min-height: 32px;
+      padding: 0 10px;
+      border: 1px solid #dcdfe6;
+      border-radius: 4px;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+    }
+
+    .textarea {
+      min-height: 104px;
+      padding: 8px 10px;
+      resize: vertical;
+      line-height: 1.5;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .input:focus,
+    .select:focus,
+    .textarea:focus {
+      border-color: var(--info);
+    }
+
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 36px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: #fafafa;
+    }
+
+    .switch {
+      position: relative;
+      width: 40px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      display: none;
+    }
+
+    .slider {
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      background: #dcdfe6;
+      transition: background 0.2s;
+    }
+
+    .slider::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform 0.2s;
+    }
+
+    .switch input:checked + .slider {
+      background: var(--info);
+    }
+
+    .switch input:checked + .slider::after {
+      transform: translateX(20px);
+    }
+
+    .release-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .release-card {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .release-card:hover {
+      border-color: #c6e2ff;
+    }
+
+    .release-card.active {
+      border-color: var(--info);
+      box-shadow: 0 0 0 2px rgba(64,158,255,0.1);
+    }
+
+    .release-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .release-name {
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    .release-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 4px;
+      color: var(--subtle);
+      background: #f4f4f5;
+      border: 1px solid #e9e9eb;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .tag.success {
+      color: #529b2e;
+      background: #f0f9eb;
+      border-color: #e1f3d8;
+    }
+
+    .tag.warning {
+      color: #b88230;
+      background: #fdf6ec;
+      border-color: #faecd8;
+    }
+
+    .tag.danger {
+      color: #c45656;
+      background: #fef0f0;
+      border-color: #fde2e2;
+    }
+
+    .tag.info {
+      color: #337ecc;
+      background: #ecf5ff;
+      border-color: #d9ecff;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .metric {
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .metric-value.success { color: var(--success); }
+    .metric-value.warning { color: var(--warning); }
+    .metric-value.danger { color: var(--danger); }
+    .metric-value.info { color: var(--info); }
+
+    .flow {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 52px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .step-index {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      color: var(--muted);
+      background: #f4f4f5;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .step.done .step-index {
+      color: #fff;
+      background: var(--success);
+    }
+
+    .step.running .step-index {
+      color: #fff;
+      background: var(--info);
+    }
+
+    .step.error .step-index {
+      color: #fff;
+      background: var(--danger);
+    }
+
+    .step-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .step-desc {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .table th,
+    .table td {
+      height: 38px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .table th {
+      color: var(--subtle);
+      background: #fafafa;
+      font-weight: 600;
+    }
+
+    .table td {
+      color: var(--text);
+    }
+
+    .tabs {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin: 0 -16px 12px;
+      padding: 0 16px;
+    }
+
+    .tab {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      color: var(--subtle);
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+    }
+
+    .tab.active {
+      color: var(--info);
+      border-bottom-color: var(--info);
+    }
+
+    .tab-page {
+      display: none;
+    }
+
+    .tab-page.active {
+      display: block;
+    }
+
+    .terminal-panel {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--terminal);
+      overflow: hidden;
+    }
+
+    .terminal-header {
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      background: #2d2d2d;
+      color: #999;
+      font-size: 12px;
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot.red { background: #ff5f56; }
+    .dot.yellow { background: #ffbd2e; }
+    .dot.green { background: #27c93f; }
+
+    .terminal-title {
+      flex: 1;
+      color: #ccc;
+    }
+
+    .terminal-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 14px;
+      color: #d4d4d4;
+      font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .terminal-line {
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .cmd { color: #dcdcaa; }
+    .info { color: #569cd6; }
+    .ok { color: #4ec9b0; }
+    .warn { color: #ce9178; }
+    .err { color: #f44747; }
+    .dim { color: #6a9955; }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .section-title {
+      margin: 16px 0 8px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .section-title:first-child {
+      margin-top: 0;
+    }
+
+    .footer-bar {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 16px;
+      background: #fff;
+      border-top: 1px solid var(--border);
+    }
+
+    .risk-text {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, 0.45);
+    }
+
+    .modal-mask.show {
+      display: flex;
+    }
+
+    .modal {
+      width: min(760px, 100%);
+      max-height: min(720px, calc(100vh - 48px));
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.24);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+    }
+
+    .modal-footer {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 0 16px;
+      border-top: 1px solid var(--border);
+      background: #fafafa;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      display: inline-block;
+      border-radius: 50%;
+      background: #c0c4cc;
+      margin-right: 6px;
+    }
+
+    .status-dot.success { background: var(--success); }
+    .status-dot.warning { background: var(--warning); }
+    .status-dot.info { background: var(--info); }
+    .status-dot.danger { background: var(--danger); }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #c0c4cc; border-radius: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
+    @media (max-width: 1280px) {
+      .content {
+        grid-template-columns: 340px minmax(420px, 1fr);
+      }
+
+      .right-panel {
+        display: none;
+      }
+    }
+
+    @media (max-width: 920px) {
+      body { overflow: auto; }
+      .app-container { min-height: 100vh; height: auto; }
+      .sidebar { width: 64px; }
+      .logo-text, .nav-item span { display: none; }
+      .nav-item { justify-content: center; padding: 0; }
+      .content {
+        grid-template-columns: 1fr;
+        overflow: visible;
+      }
+      .panel { min-height: 320px; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .split { grid-template-columns: 1fr; }
+      .right-panel { display: flex; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <aside class="sidebar">
+      <div class="logo-area">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#409eff" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"></path>
+        </svg>
+        <span class="logo-text">GitOps</span>
+      </div>
+
+      <nav class="nav-menu">
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+          </svg>
+          <span>主操作页</span>
+        </div>
+        <div class="nav-item active">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 17l6-6 4 4 6-8"></path>
+            <path d="M14 7h6v6"></path>
+            <path d="M4 21h16"></path>
+          </svg>
+          <span>发布管理</span>
+        </div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33A1.65 1.65 0 0 0 14 20.91V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 0 1 7.1 4.29l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>配置管理</span>
+        </div>
+        <div class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <span>帮助</span>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="top-strip">
+        <div class="breadcrumb">
+          <span>GitOps</span>
+          <span>/</span>
+          <strong>发布管理</strong>
+        </div>
+        <div class="env-switch">
+          <span>当前环境</span>
+          <span class="env-pill">生产 prod</span>
+        </div>
+      </div>
+
+      <div class="content">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M8 6h13M8 12h13M8 18h13"></path>
+                  <path d="M3 6h.01M3 12h.01M3 18h.01"></path>
+                </svg>
+                发布任务
+              </div>
+              <div class="panel-subtitle">当前待发布记录与执行尝试</div>
+            </div>
+            <button class="btn">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                <path d="M21 3v6h-6"></path>
+              </svg>
+              刷新
+            </button>
+          </div>
+
+          <div class="panel-body">
+            <div class="release-list">
+              <article class="release-card active" data-release="0">
+                <div class="release-card-head">
+                  <div>
+                    <div class="release-name">当前待发布任务</div>
+                    <div class="release-meta">
+                      <span>发布窗口：2026-06-08 晚间</span>
+                      <span>服务：8</span>
+                      <span>已执行：3 次</span>
+                    </div>
+                  </div>
+                  <span class="tag warning">可重跑</span>
+                </div>
+                <div class="release-meta">
+                  <span class="tag info">prep-3.0 → main</span>
+                  <span class="tag">lasen-prod-front</span>
+                  <span class="tag">lasen-prod-ec</span>
+                </div>
+              </article>
+
+              <article class="release-card" data-release="1">
+                <div class="release-card-head">
+                  <div>
+                    <div class="release-name">第 3 次执行记录</div>
+                    <div class="release-meta">
+                      <span>开始：17:02:18</span>
+                      <span>耗时：08m 41s</span>
+                      <span>失败点：Jenkins 构建</span>
+                    </div>
+                  </div>
+                  <span class="tag danger">失败</span>
+                </div>
+                <div class="release-meta">
+                  <span class="tag">可基于当前待发布任务重跑</span>
+                </div>
+              </article>
+
+              <article class="release-card" data-release="2">
+                <div class="release-card-head">
+                  <div>
+                    <div class="release-name">第 2 次执行记录</div>
+                    <div class="release-meta">
+                      <span>开始：16:46:03</span>
+                      <span>耗时：05m 12s</span>
+                      <span>失败点：Jenkins 构建</span>
+                    </div>
+                  </div>
+                  <span class="tag danger">失败</span>
+                </div>
+                <div class="release-meta">
+                  <span class="tag">节点数异常</span>
+                  <span class="tag">已通知</span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 3v18h18"></path>
+                  <path d="M7 15l4-4 3 3 5-7"></path>
+                </svg>
+                发布执行台
+              </div>
+              <div class="panel-subtitle">把脚本步骤拆成可观察的发布流水线</div>
+            </div>
+            <div class="toolbar">
+              <button class="btn">预检查</button>
+              <button class="btn danger">中止</button>
+              <button class="btn primary" id="startButton">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                开始发布
+              </button>
+            </div>
+          </div>
+
+          <div class="panel-body">
+            <div class="summary-grid">
+              <div class="metric">
+                <div class="metric-label">待合并 MR</div>
+                <div class="metric-value info" id="mrMetric">16</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">待构建服务</div>
+                <div class="metric-value warning" id="serviceMetric">8</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Jenkins 检查</div>
+                <div class="metric-value success">16</div>
+              </div>
+            </div>
+
+            <div class="tabs">
+              <div class="tab active" data-tab="flow">流程</div>
+              <div class="tab" data-tab="service">服务</div>
+            </div>
+
+            <div class="tab-page active" id="tab-flow">
+              <div class="flow" id="flow">
+                <div class="step" data-step="0">
+                  <div class="step-index">1</div>
+                  <div>
+                    <div class="step-title">获取并校验合并到 prep-3.0 的 MR</div>
+                    <div class="step-desc">扫描 GitLab 项目列表，校验提交数量是否超过阈值。</div>
+                  </div>
+                  <span class="tag">pending</span>
+                </div>
+                <div class="step" data-step="1">
+                  <div class="step-index">2</div>
+                  <div>
+                    <div class="step-title">合并源分支到 prep-3.0</div>
+                    <div class="step-desc">自动合并所有可合并请求，失败时记录错误并阻断。</div>
+                  </div>
+                  <span class="tag">pending</span>
+                </div>
+                <div class="step" data-step="2">
+                  <div class="step-index">3</div>
+                  <div>
+                    <div class="step-title">创建 prep-3.0 到 main 的 MR</div>
+                    <div class="step-desc">确保每个项目都有发布 MR，并关闭无提交 MR。</div>
+                  </div>
+                  <span class="tag">pending</span>
+                </div>
+                <div class="step" data-step="3">
+                  <div class="step-index">4</div>
+                  <div>
+                    <div class="step-title">备份 main 分支并执行主干合并</div>
+                    <div class="step-desc">创建 main-back-yyyyMMddHHmmss，仅保留最近 5 个备份。</div>
+                  </div>
+                  <span class="tag">pending</span>
+                </div>
+                <div class="step" data-step="4">
+                  <div class="step-index">5</div>
+                  <div>
+                    <div class="step-title">触发 snapshot-release 与服务 Jenkins 构建</div>
+                    <div class="step-desc">先构建 lasen-prod-snapshot-release，再按待发布服务触发 JK 任务。</div>
+                  </div>
+                  <span class="tag">pending</span>
+                </div>
+                <div class="step" data-step="5">
+                  <div class="step-index">6</div>
+                  <div>
+                    <div class="step-title">检查 Jenkins 构建结果</div>
+                    <div class="step-desc">Jenkins 任务结果异常时标记发布失败。</div>
+                  </div>
+                  <span class="tag">pending</span>
+                </div>
+                <div class="step" data-step="6">
+                  <div class="step-index">7</div>
+                  <div>
+                    <div class="step-title">完成发布回调并发送通知</div>
+                    <div class="step-desc">调用中台完成接口，写入发布日志，发送结果通知。</div>
+                  </div>
+                  <span class="tag">pending</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="tab-page" id="tab-service">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>服务名</th>
+                    <th>Jenkins Job</th>
+                    <th>节点</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>front</td><td>lasen-prod-front</td><td>2</td><td><span class="tag warning">等待构建</span></td></tr>
+                  <tr><td>ec</td><td>lasen-prod-ec</td><td>3</td><td><span class="tag warning">等待构建</span></td></tr>
+                  <tr><td>ecjob</td><td>lasen-prod-ec-job</td><td>1</td><td><span class="tag warning">等待构建</span></td></tr>
+                  <tr><td>basedata</td><td>lasen-prod-base-data</td><td>2</td><td><span class="tag warning">等待构建</span></td></tr>
+                  <tr><td>gateway</td><td>lasen-prod-gateway</td><td>2</td><td><span class="tag warning">等待构建</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </section>
+
+        <aside class="panel right-panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+                </svg>
+                发布日志
+              </div>
+              <div class="panel-subtitle">脚本输出与关键事件</div>
+            </div>
+            <button class="btn" id="clearLogButton">清空</button>
+          </div>
+          <div class="terminal-panel">
+            <div class="terminal-header">
+              <div class="terminal-dots">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <span class="terminal-title">release-prod.log</span>
+              <span>prod</span>
+            </div>
+            <div class="terminal-body" id="terminal">
+              <div class="terminal-line"><span class="dim">[GitOps]</span> 等待执行，点击「开始发布」查看原型流程。</div>
+              <div class="terminal-line"><span class="info">[info]</span> 当前任务：2026-06-08 晚间待发布记录</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="footer-bar">
+        <div class="risk-text">
+          <span class="status-dot info"></span>
+          发布动作仍建议保留二次确认。
+        </div>
+        <div class="toolbar">
+          <button class="btn">保存草稿</button>
+          <button class="btn">导出发布日志</button>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    // 原型交互：切换发布任务或执行记录，仅更新选中态和部分统计数据。
+    const releaseCards = document.querySelectorAll(".release-card");
+    const releases = [
+      { mr: 16, service: 8, name: "当前待发布任务" },
+      { mr: 16, service: 8, name: "第 3 次执行记录" },
+      { mr: 16, service: 8, name: "第 2 次执行记录" }
+    ];
+
+    releaseCards.forEach((card) => {
+      card.addEventListener("click", () => {
+        releaseCards.forEach((item) => item.classList.remove("active"));
+        card.classList.add("active");
+        const data = releases[Number(card.dataset.release)];
+        document.getElementById("mrMetric").textContent = data.mr;
+        document.getElementById("serviceMetric").textContent = data.service;
+        appendLog("info", `[info] 已选择：${data.name}`);
+      });
+    });
+
+    // 原型交互：切换流程、服务视图。
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+        document.querySelectorAll(".tab-page").forEach((page) => page.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById(`tab-${tab.dataset.tab}`).classList.add("active");
+      });
+    });
+
+    const terminal = document.getElementById("terminal");
+
+    function appendLog(type, text) {
+      const line = document.createElement("div");
+      line.className = "terminal-line";
+      const span = document.createElement("span");
+      span.className = type;
+      span.textContent = text;
+      line.appendChild(span);
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function resetSteps() {
+      document.querySelectorAll(".step").forEach((step) => {
+        step.classList.remove("running", "done", "error");
+        const tag = step.querySelector(".tag");
+        tag.className = "tag";
+        tag.textContent = "pending";
+      });
+    }
+
+    function setStep(index, state, text) {
+      const step = document.querySelector(`.step[data-step="${index}"]`);
+      if (!step) return;
+      step.classList.remove("running", "done", "error");
+      step.classList.add(state);
+      const tag = step.querySelector(".tag");
+      tag.className = state === "done" ? "tag success" : state === "error" ? "tag danger" : "tag info";
+      tag.textContent = text;
+    }
+
+    // 原型交互：模拟脚本执行进度，帮助观察页面状态流转。
+    document.getElementById("startButton").addEventListener("click", async () => {
+      resetSteps();
+      terminal.innerHTML = "";
+      appendLog("cmd", "$ deploy --env prod --source prep-3.0 --target main");
+
+      const logs = [
+        "获取合并到 prep-3.0 的 MR，共 16 个",
+        "合并源分支到 prep-3.0 完成",
+        "创建 prep-3.0 到 main 的 MR，共 16 个",
+        "main 分支备份完成，开始合并主干",
+        "触发 lasen-prod-snapshot-release 与 8 个服务构建",
+        "Jenkins 构建结果检查通过",
+        "完成发布回调，通知已发送"
+      ];
+
+      for (let i = 0; i < logs.length; i++) {
+        setStep(i, "running", "running");
+        appendLog("info", `[step ${i + 1}] ${logs[i]}`);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        setStep(i, "done", "done");
+        appendLog("ok", `[ok] ${logs[i]}`);
+      }
+
+      appendLog("ok", "[success] 发布流程执行完成，晚安~");
+    });
+
+    document.getElementById("clearLogButton").addEventListener("click", () => {
+      terminal.innerHTML = '<div class="terminal-line"><span class="dim">[GitOps]</span> 日志已清空。</div>';
+    });
+
+  </script>
+</body>
+</html>

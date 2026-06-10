@@ -1,12 +1,22 @@
 ﻿<script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useAppStore } from './composables/useAppStore'
+import { loadConfigFromDatabase } from './utils/configPersistence'
 import MainOps from './views/MainOps.vue'
+import ReleasePage from './views/ReleasePage.vue'
 import ConfigPage from './views/ConfigPage.vue'
 import HelpPage from './views/HelpPage.vue'
 
 const store = useAppStore()
 const currentPage = computed(() => store.currentPage)
+
+onMounted(async () => {
+  try {
+    await loadConfigFromDatabase(store)
+  } catch {
+    // 未配置数据库连接时保持本地空状态，不阻断应用启动。
+  }
+})
 </script>
 
 <template>
@@ -32,6 +42,10 @@ const currentPage = computed(() => store.currentPage)
           <el-icon><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></el-icon>
           <span>主操作页</span>
         </el-menu-item>
+        <el-menu-item index="release">
+          <el-icon><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6 4 4 6-8"/><path d="M14 7h6v6"/><path d="M4 21h16"/></svg></el-icon>
+          <span>发布管理</span>
+        </el-menu-item>
         <el-menu-item index="config">
           <el-icon><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></el-icon>
           <span>配置管理</span>
@@ -46,6 +60,7 @@ const currentPage = computed(() => store.currentPage)
     <!-- 主内容区 -->
     <el-main class="main-area">
       <MainOps v-if="currentPage === 'main'" />
+      <ReleasePage v-else-if="currentPage === 'release'" />
       <ConfigPage v-else-if="currentPage === 'config'" />
       <HelpPage v-else-if="currentPage === 'help'" />
     </el-main>

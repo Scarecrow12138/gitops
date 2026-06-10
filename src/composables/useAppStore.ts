@@ -1,5 +1,5 @@
 ﻿import { reactive, ref, computed } from "vue"
-import type { AppPage, RepoTab, LogEntry, ToolDef, ToolStep, RepoConfig, FlowTemplate, GitLabConfig, GlobalSettings, ToolId } from "../types"
+import type { AppPage, RepoTab, LogEntry, ToolDef, RepoConfig, FlowTemplate, GitLabConfig, GlobalSettings, ReleaseConfig, ToolId } from "../types"
 
 function createStandardCpTool(): ToolDef {
   return {
@@ -40,11 +40,8 @@ function createHotfixMrTool(): ToolDef {
   }
 }
 
-const defaultRepos: RepoConfig[] = [
-  { id: "repo-1", path: "D:\\\\workspace\\\\lcz-platform", alias: "\u9884\u53d1\u73af\u5883" },
-  { id: "repo-2", path: "D:\\\\workspace\\\\deepseek-api", alias: "AI \u670d\u52a1" },
-  { id: "repo-3", path: "D:\\\\workspace\\\\ops-dash", alias: "\u8fd0\u7ef4" },
-]
+// 仓库列表只来自用户配置或数据库，启动时不再注入测试仓库。
+const defaultRepos: RepoConfig[] = []
 
 const defaultGitLab: GitLabConfig = {
   url: "http://gitlab.5codemonkey.com:2818",
@@ -71,11 +68,19 @@ const defaultSettings: GlobalSettings = {
   logRetention: 500,
 }
 
+const defaultReleaseConfig: ReleaseConfig = {
+  jenkinsUrl: "http://jenkins.5codemonkey.com:1820",
+  jenkinsUsername: "",
+  jenkinsToken: "",
+  commitLimit: 50,
+}
+
 const currentPage = ref<AppPage>("main")
 const repos = reactive<RepoConfig[]>(defaultRepos)
 const gitLabConfig = reactive<GitLabConfig>(defaultGitLab)
 const flowTemplate = reactive<FlowTemplate>(defaultFlow)
 const settings = reactive<GlobalSettings>(defaultSettings)
+const releaseConfig = reactive<ReleaseConfig>(defaultReleaseConfig)
 
 const repoTabs = reactive<RepoTab[]>(
   defaultRepos.map((repo, i) => ({
@@ -149,13 +154,73 @@ function addRepo(repo: RepoConfig) {
   activeTabId.value = tab.id
 }
 
-function removeTab(tabId: string) {
-  const idx = repoTabs.findIndex((t) => t.id === tabId)
-  if (idx < 0) return
-  repoTabs.splice(idx, 1)
-  if (activeTabId.value === tabId && repoTabs.length > 0) {
-    activeTabId.value = repoTabs[Math.min(idx, repoTabs.length - 1)].id
+function createRepoTab(repo: RepoConfig): RepoTab {
+  return {
+    id: "tab-" + Date.now() + "-" + repo.id,
+    repoId: repo.id,
+    path: repo.path,
+    alias: repo.alias,
+    logs: [],
+    activeTool: null,
+    tools: [createStandardCpTool(), createHotfixMrTool()],
   }
+}
+
+function ensureActiveTab() {
+  if (repoTabs.length === 0) {
+    activeTabId.value = ""
+    return
+  }
+  if (!repoTabs.some((tab) => tab.id === activeTabId.value)) {
+    activeTabId.value = repoTabs[0].id
+  }
+}
+
+function syncTabsWithRepos(nextRepos: RepoConfig[]) {
+  for (let i = repoTabs.length - 1; i >= 0; i--) {
+    if (!nextRepos.some((repo) => repo.id === repoTabs[i].repoId)) {
+      repoTabs.splice(i, 1)
+    }
+  }
+
+  nextRepos.forEach((repo) => {
+    const tab = repoTabs.find((item) => item.repoId === repo.id)
+    if (tab) {
+      // 仓库配置是主数据源，tab 只缓存展示和执行状态。
+      tab.path = repo.path
+      tab.alias = repo.alias
+      return
+    }
+    repoTabs.push(createRepoTab(repo))
+  })
+
+  ensureActiveTab()
+}
+
+function replaceRepos(nextRepos: RepoConfig[]) {
+  repos.splice(0, repos.length, ...nextRepos)
+  syncTabsWithRepos(repos)
+}
+
+function removeRepo(repoId: string) {
+  const repoIdx = repos.findIndex((repo) => repo.id === repoId)
+  if (repoIdx < 0) return false
+
+  const removedTabIndex = repoTabs.findIndex((tab) => tab.repoId === repoId)
+  repos.splice(repoIdx, 1)
+  repoTabs.splice(0, repoTabs.length, ...repoTabs.filter((tab) => tab.repoId !== repoId))
+
+  if (repoTabs.length === 0) {
+    activeTabId.value = ""
+  } else if (!repoTabs.some((tab) => tab.id === activeTabId.value)) {
+    activeTabId.value = repoTabs[Math.min(Math.max(removedTabIndex, 0), repoTabs.length - 1)].id
+  }
+  return true
+}
+
+function removeTab(tabId: string) {
+  const tab = repoTabs.find((item) => item.id === tabId)
+  return tab ? removeRepo(tab.repoId) : false
 }
 
 function updateGitLabConfig(config: Partial<GitLabConfig>) {
@@ -168,6 +233,10 @@ function updateFlowTemplate(template: Partial<FlowTemplate>) {
 
 function updateSettings(s: Partial<GlobalSettings>) {
   Object.assign(settings, s)
+}
+
+function updateReleaseConfig(config: Partial<ReleaseConfig>) {
+  Object.assign(releaseConfig, config)
 }
 
 function resetAllSteps(tabId: string) {
@@ -184,11 +253,11 @@ function resetAllSteps(tabId: string) {
 
 export function useAppStore() {
   return reactive({
-    currentPage, repos, gitLabConfig, flowTemplate, settings,
+    currentPage, repos, gitLabConfig, flowTemplate, settings, releaseConfig,
     repoTabs, activeTabId, activeTab,
     setPage, addLog, clearLogs, setToolStatus, setStepStatus,
-    setActiveTool, switchTab, addRepo, removeTab,
-    updateGitLabConfig, updateFlowTemplate, updateSettings, resetAllSteps,
+    setActiveTool, switchTab, addRepo, replaceRepos, removeRepo, removeTab,
+    updateGitLabConfig, updateFlowTemplate, updateSettings, updateReleaseConfig, resetAllSteps,
   })
 }
 
